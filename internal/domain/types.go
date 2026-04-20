@@ -51,3 +51,8 @@ type Balance struct {
 	Free   string
 	Locked string
 }
+
+type MarketEvent struct {
+	Symbol  string
+	BestBid string
+}
