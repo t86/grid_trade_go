@@ -34,6 +34,12 @@ type OrderRecord struct {
 	Status        string
 }
 
+type OrderEvent struct {
+	ClientOrderID string
+	Symbol        string
+	Status        string
+}
+
 type PositionSnapshot struct {
 	Symbol       string
 	PositionSide string
