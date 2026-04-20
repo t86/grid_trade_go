@@ -27,3 +27,21 @@ type OrderIntent struct {
 	ClientOrderID string
 	Reason        string
 }
+
+type OrderRecord struct {
+	ClientOrderID string
+	Symbol        string
+	Status        string
+}
+
+type PositionSnapshot struct {
+	Symbol       string
+	PositionSide string
+	Quantity     string
+}
+
+type Balance struct {
+	Asset  string
+	Free   string
+	Locked string
+}
