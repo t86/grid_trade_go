@@ -1,6 +1,7 @@
 system:
   log_level: info
   http_addr: ":8080"
+  reduce_only_on_degraded: true
 accounts:
   - name: primary
     market_types: ["spot", "futures_um"]
@@ -9,5 +10,9 @@ accounts:
 strategies:
   - id: grid-btc
     type: grid
-    symbol: BTCUSDT
     market: futures_um
+    symbol: BTCUSDT
+    grid_count: 12
+    upper_price: "120000"
+    lower_price: "80000"
+    base_order_size: "0.001"
