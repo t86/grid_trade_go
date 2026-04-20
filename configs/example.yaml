@@ -1,0 +1,13 @@
+system:
+  log_level: info
+  http_addr: ":8080"
+accounts:
+  - name: primary
+    market_types: ["spot", "futures_um"]
+    api_key_env: BINANCE_API_KEY
+    secret_key_env: BINANCE_SECRET_KEY
+strategies:
+  - id: grid-btc
+    type: grid
+    symbol: BTCUSDT
+    market: futures_um
