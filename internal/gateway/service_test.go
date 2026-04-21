@@ -32,6 +32,21 @@ func TestGatewayBootstrapsUserStreamsAndMarksSessionActive(t *testing.T) {
 	require.True(t, health.TradingEnabled)
 }
 
+func TestGatewaySnapshotIncludesAccountMarketState(t *testing.T) {
+	gw := NewService(fakeListenKeyProvider{}, fakeConnector{})
+
+	err := gw.BootstrapAccount(context.Background(), "primary", []domain.MarketType{domain.MarketSpot})
+	require.NoError(t, err)
+
+	snapshot := gw.Snapshot()
+
+	require.Len(t, snapshot.Accounts, 1)
+	require.Equal(t, "primary", snapshot.Accounts[0].Account)
+	require.Equal(t, domain.MarketSpot, snapshot.Accounts[0].Market)
+	require.Equal(t, StateActive, snapshot.Accounts[0].SessionState)
+	require.False(t, snapshot.Accounts[0].ReduceOnly)
+}
+
 type fakeListenKeyProvider struct{}
 
 func (fakeListenKeyProvider) CreateListenKey(context.Context, domain.MarketType) (string, error) {
