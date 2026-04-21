@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"grid_trade/internal/config"
+	"grid_trade/internal/debughttp"
+	"grid_trade/internal/debugview"
 	"grid_trade/internal/gateway"
 	runtimepkg "grid_trade/internal/strategy/runtime"
 )
@@ -18,11 +21,37 @@ type app struct {
 	gateway  *gateway.Service
 	runtime  *runtimepkg.Runtime
 	httpAddr string
+	handler  *http.ServeMux
 }
 
 func BuildApp(cfg config.Config) (*app, error) {
 	gw := gateway.NewService(nil, nil)
 	rt := runtimepkg.New()
+	view := debugview.NewService(gw)
+	debugHandler := debughttp.NewHandler(view)
+	mux := http.NewServeMux()
+	mux.Handle("/debug/dashboard", debugHandler)
+	mux.Handle("/debug/accounts", debugHandler)
+	mux.Handle("/debug/events", debugHandler)
+	fileServer := http.FileServer(http.Dir("web/debug"))
+	mux.HandleFunc("/debug/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/debug" || r.URL.Path == "/debug/" {
+			http.ServeFile(w, r, "web/debug/index.html")
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/debug/static/") {
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/debug/static")
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(gw.Health()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
 
 	addr := cfg.System.HTTPAddr
 	if addr == "" {
@@ -36,6 +65,7 @@ func BuildApp(cfg config.Config) (*app, error) {
 		gateway:  gw,
 		runtime:  rt,
 		httpAddr: addr,
+		handler:  mux,
 	}, nil
 }
 
@@ -48,15 +78,8 @@ func main() {
 		log.Fatalf("build app: %v", err)
 	}
 
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(app.gateway.Health()); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	})
-
 	go func() {
-		if err := http.ListenAndServe(app.httpAddr, nil); err != nil && err != http.ErrServerClosed {
+		if err := http.ListenAndServe(app.httpAddr, app.handler); err != nil && err != http.ErrServerClosed {
 			log.Printf("health server stopped: %v", err)
 		}
 	}()
