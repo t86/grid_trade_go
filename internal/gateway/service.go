@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 	"sync"
+	"time"
 
 	"grid_trade/internal/domain"
 )
@@ -27,25 +28,49 @@ type Health struct {
 
 type Snapshot struct {
 	Accounts []AccountSnapshot
+	Events   []EventSnapshot
 }
 
 type AccountSnapshot struct {
-	Account      string
-	Market       domain.MarketType
-	SessionState SessionState
-	ReduceOnly   bool
-	LastError    string
+	Account            string
+	Market             domain.MarketType
+	SessionState       SessionState
+	UserStreamState    string
+	ListenKeyState     string
+	ListenKeyExpiresAt *time.Time
+	LastHeartbeatAt    *time.Time
+	HeartbeatLagMs     int64
+	LastReconnectAt    *time.Time
+	ReduceOnly         bool
+	ActiveBackoff      bool
+	LastError          string
+}
+
+type EventSnapshot struct {
+	Account   string            `json:"account"`
+	Market    domain.MarketType `json:"market"`
+	Category  string            `json:"category"`
+	Message   string            `json:"message"`
+	Timestamp time.Time         `json:"timestamp"`
 }
 
 type Service struct {
-	mu         sync.RWMutex
-	sessions   map[string]SessionState
-	markets    map[accountMarketKey]SessionState
-	lastErrors map[accountMarketKey]string
-	conns      map[string][]io.Closer
-	reduceOnly bool
-	listenKeys ListenKeyProvider
-	connector  UserStreamConnector
+	mu              sync.RWMutex
+	sessions        map[string]SessionState
+	markets         map[accountMarketKey]SessionState
+	userStreams     map[accountMarketKey]string
+	listenKeyStates map[accountMarketKey]string
+	listenKeyExpiry map[accountMarketKey]*time.Time
+	lastHeartbeat   map[accountMarketKey]*time.Time
+	lastReconnect   map[accountMarketKey]*time.Time
+	activeBackoff   map[accountMarketKey]bool
+	lastErrors      map[accountMarketKey]string
+	conns           map[string][]io.Closer
+	events          []EventSnapshot
+	reduceOnly      bool
+	listenKeys      ListenKeyProvider
+	connector       UserStreamConnector
+	now             func() time.Time
 }
 
 type accountMarketKey struct {
@@ -63,12 +88,19 @@ type UserStreamConnector interface {
 
 func NewService(listenKeys ListenKeyProvider, connector UserStreamConnector) *Service {
 	return &Service{
-		sessions:   make(map[string]SessionState),
-		markets:    make(map[accountMarketKey]SessionState),
-		lastErrors: make(map[accountMarketKey]string),
-		conns:      make(map[string][]io.Closer),
-		listenKeys: listenKeys,
-		connector:  connector,
+		sessions:        make(map[string]SessionState),
+		markets:         make(map[accountMarketKey]SessionState),
+		userStreams:     make(map[accountMarketKey]string),
+		listenKeyStates: make(map[accountMarketKey]string),
+		listenKeyExpiry: make(map[accountMarketKey]*time.Time),
+		lastHeartbeat:   make(map[accountMarketKey]*time.Time),
+		lastReconnect:   make(map[accountMarketKey]*time.Time),
+		activeBackoff:   make(map[accountMarketKey]bool),
+		lastErrors:      make(map[accountMarketKey]string),
+		conns:           make(map[string][]io.Closer),
+		listenKeys:      listenKeys,
+		connector:       connector,
+		now:             time.Now,
 	}
 }
 
@@ -83,7 +115,10 @@ func (s *Service) BootstrapAccount(ctx context.Context, account string, markets 
 	s.mu.Lock()
 	s.sessions[account] = StateConnecting
 	for _, market := range markets {
-		s.markets[accountMarketKey{account: account, market: market}] = StateConnecting
+		key := accountMarketKey{account: account, market: market}
+		s.markets[key] = StateConnecting
+		s.userStreams[key] = "connecting"
+		s.listenKeyStates[key] = "creating"
 	}
 	s.mu.Unlock()
 
@@ -112,7 +147,12 @@ func (s *Service) BootstrapAccount(ctx context.Context, account string, markets 
 	for _, market := range markets {
 		key := accountMarketKey{account: account, market: market}
 		s.markets[key] = StateActive
+		s.userStreams[key] = "connected"
+		s.listenKeyStates[key] = "healthy"
+		now := s.now()
+		s.lastReconnect[key] = &now
 		delete(s.lastErrors, key)
+		s.recordEventLocked(account, market, "connection", "user stream connected")
 	}
 	s.conns[account] = closers
 	s.reduceOnly = false
@@ -126,12 +166,23 @@ func (s *Service) Snapshot() Snapshot {
 
 	accounts := make([]AccountSnapshot, 0, len(s.markets))
 	for key, state := range s.markets {
+		var heartbeatLagMs int64
+		if heartbeat := s.lastHeartbeat[key]; heartbeat != nil {
+			heartbeatLagMs = s.now().Sub(*heartbeat).Milliseconds()
+		}
 		accounts = append(accounts, AccountSnapshot{
-			Account:      key.account,
-			Market:       key.market,
-			SessionState: state,
-			ReduceOnly:   s.reduceOnly,
-			LastError:    s.lastErrors[key],
+			Account:            key.account,
+			Market:             key.market,
+			SessionState:       state,
+			UserStreamState:    s.userStreams[key],
+			ListenKeyState:     s.listenKeyStates[key],
+			ListenKeyExpiresAt: s.listenKeyExpiry[key],
+			LastHeartbeatAt:    s.lastHeartbeat[key],
+			HeartbeatLagMs:     heartbeatLagMs,
+			LastReconnectAt:    s.lastReconnect[key],
+			ReduceOnly:         s.reduceOnly,
+			ActiveBackoff:      s.activeBackoff[key],
+			LastError:          s.lastErrors[key],
 		})
 	}
 	sort.Slice(accounts, func(i, j int) bool {
@@ -141,7 +192,9 @@ func (s *Service) Snapshot() Snapshot {
 		return accounts[i].Market < accounts[j].Market
 	})
 
-	return Snapshot{Accounts: accounts}
+	events := append([]EventSnapshot(nil), s.events...)
+
+	return Snapshot{Accounts: accounts, Events: events}
 }
 
 func (s *Service) State(account string) SessionState {
@@ -178,5 +231,65 @@ func (s *Service) markMarketDegraded(account string, market domain.MarketType, l
 
 	key := accountMarketKey{account: account, market: market}
 	s.markets[key] = StateDegraded
+	s.userStreams[key] = "disconnected"
+	s.listenKeyStates[key] = "stale"
 	s.lastErrors[key] = lastError
+	s.recordEventLocked(account, market, "connection", lastError)
+}
+
+func (s *Service) RecordHeartbeat(account string, market domain.MarketType, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := accountMarketKey{account: account, market: market}
+	s.lastHeartbeat[key] = &at
+	s.userStreams[key] = "connected"
+	s.recordEventLocked(account, market, "connection", "heartbeat received")
+}
+
+func (s *Service) MarkListenKeyState(account string, market domain.MarketType, state string, expiresAt *time.Time, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := accountMarketKey{account: account, market: market}
+	s.listenKeyStates[key] = state
+	s.listenKeyExpiry[key] = expiresAt
+	if detail != "" {
+		s.lastErrors[key] = detail
+	}
+	s.recordEventLocked(account, market, "connection", "listen key "+state)
+}
+
+func (s *Service) MarkBackoff(account string, market domain.MarketType, active bool, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := accountMarketKey{account: account, market: market}
+	s.activeBackoff[key] = active
+	if active {
+		s.markets[key] = StateBackoff
+	} else if s.markets[key] == StateBackoff {
+		s.markets[key] = StateActive
+	}
+	if detail != "" {
+		s.lastErrors[key] = detail
+	}
+	if active {
+		s.recordEventLocked(account, market, "protection", "backoff enabled")
+	} else {
+		s.recordEventLocked(account, market, "protection", "backoff cleared")
+	}
+}
+
+func (s *Service) recordEventLocked(account string, market domain.MarketType, category, message string) {
+	s.events = append(s.events, EventSnapshot{
+		Account:   account,
+		Market:    market,
+		Category:  category,
+		Message:   message,
+		Timestamp: s.now(),
+	})
+	if len(s.events) > 100 {
+		s.events = append([]EventSnapshot(nil), s.events[len(s.events)-100:]...)
+	}
 }

@@ -30,6 +30,14 @@ async function loadAccounts(market) {
   return response.json();
 }
 
+async function loadEvents(market, account) {
+  const response = await fetch(`/debug/events?market=${encodeURIComponent(market)}&account=${encodeURIComponent(account || "")}`);
+  if (!response.ok) {
+    throw new Error(`events ${response.status}`);
+  }
+  return response.json();
+}
+
 function renderAlerts(alerts) {
   const root = document.getElementById("alerts");
   if (!alerts || alerts.length === 0) {
@@ -103,6 +111,9 @@ function renderAccountRows(accounts) {
       <div>
         <strong>${escapeHTML(account.account)}</strong>
         <div class="account-meta">${escapeHTML(account.sessionState)} / listen key ${escapeHTML(account.listenKeyState)}</div>
+        <div class="account-meta">heartbeat: ${escapeHTML(formatDate(account.lastHeartbeatAt))}</div>
+        <div class="account-meta">reconnect: ${escapeHTML(formatDate(account.lastReconnectAt))}</div>
+        <div class="account-meta">listen key expires: ${escapeHTML(formatDate(account.listenKeyExpiresAt))}</div>
         <div class="account-meta">${escapeHTML(account.lastError || "no recent error")}</div>
       </div>
       <div class="account-meta">reduce-only: ${account.reduceOnly ? "yes" : "no"}</div>
@@ -111,15 +122,31 @@ function renderAccountRows(accounts) {
   `).join("");
 }
 
+function renderEvents(events) {
+  const root = document.getElementById("events");
+  if (!events || events.length === 0) {
+    root.innerHTML = '<div class="empty">No recent events</div>';
+    return;
+  }
+  root.innerHTML = events.map((event) => `
+    <article class="event">
+      <strong>${escapeHTML(event.message)}</strong>
+    </article>
+  `).join("");
+}
+
 async function refresh() {
   const refreshState = document.getElementById("refresh-state");
   try {
     const dashboard = await loadDashboard();
+    const eventsPayload = await loadEvents("futures_um", "primary");
     renderAlerts(dashboard.alerts || []);
     renderMarkets(dashboard.markets || []);
+    renderEvents(eventsPayload.events || []);
     refreshState.textContent = `最近刷新 ${new Date().toLocaleTimeString()}`;
   } catch (error) {
     document.getElementById("alerts").innerHTML = `<div class="empty">${escapeHTML(error.message)}</div>`;
+    document.getElementById("events").innerHTML = `<div class="empty">${escapeHTML(error.message)}</div>`;
     refreshState.textContent = `刷新失败: ${error.message}`;
   }
 }

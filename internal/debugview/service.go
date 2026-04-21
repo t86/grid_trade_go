@@ -41,14 +41,17 @@ func (s Service) Accounts(market domain.MarketType) []AccountConnectionRow {
 			continue
 		}
 		rows = append(rows, AccountConnectionRow{
-			Account:         account.Account,
-			SessionState:    account.SessionState,
-			UserStreamState: string(account.SessionState),
-			ListenKeyState:  listenKeyState(account),
-			ReduceOnly:      account.ReduceOnly,
-			KillSwitch:      false,
-			ActiveBackoff:   account.SessionState == gateway.StateBackoff,
-			LastError:       account.LastError,
+			Account:            account.Account,
+			SessionState:       account.SessionState,
+			UserStreamState:    account.UserStreamState,
+			ListenKeyState:     account.ListenKeyState,
+			ListenKeyExpiresAt: account.ListenKeyExpiresAt,
+			LastHeartbeatAt:    account.LastHeartbeatAt,
+			LastReconnectAt:    account.LastReconnectAt,
+			ReduceOnly:         account.ReduceOnly,
+			KillSwitch:         false,
+			ActiveBackoff:      account.ActiveBackoff,
+			LastError:          account.LastError,
 		})
 	}
 
@@ -64,7 +67,14 @@ func (s Service) Accounts(market domain.MarketType) []AccountConnectionRow {
 }
 
 func (s Service) Events(_ domain.MarketType, _ string) []Event {
-	return nil
+	snapshot := s.gateway.Snapshot()
+	events := make([]Event, 0, len(snapshot.Events))
+	for _, event := range snapshot.Events {
+		events = append(events, Event{
+			Message: event.Message,
+		})
+	}
+	return events
 }
 
 func buildAlerts(accounts []gateway.AccountSnapshot, now time.Time) []AlertSummary {
@@ -115,12 +125,16 @@ func buildMarketCards(accounts []gateway.AccountSnapshot) []MarketHealthCard {
 	cards := make([]MarketHealthCard, 0, len(markets))
 	for _, market := range markets {
 		card := MarketHealthCard{Market: market, Health: HealthHealthy}
+		var heartbeatTotal int64
+		var heartbeatCount int64
 		for _, account := range accounts {
 			if account.Market != market {
 				continue
 			}
 			if account.SessionState == gateway.StateActive {
 				card.OnlineAccounts++
+			}
+			if account.ListenKeyState == "healthy" {
 				card.ListenKeyHealthyAccounts++
 			}
 			if account.SessionState == gateway.StateDegraded {
@@ -136,6 +150,16 @@ func buildMarketCards(accounts []gateway.AccountSnapshot) []MarketHealthCard {
 					card.Health = HealthWarning
 				}
 			}
+			if account.HeartbeatLagMs > 0 {
+				heartbeatTotal += account.HeartbeatLagMs
+				heartbeatCount++
+			}
+			if card.LastReconnectAt == nil && account.LastReconnectAt != nil {
+				card.LastReconnectAt = account.LastReconnectAt
+			}
+		}
+		if heartbeatCount > 0 {
+			card.AvgHeartbeatLagMs = heartbeatTotal / heartbeatCount
 		}
 		cards = append(cards, card)
 	}
@@ -164,14 +188,4 @@ func severityRank(severity Severity) int {
 	default:
 		return 2
 	}
-}
-
-func listenKeyState(account gateway.AccountSnapshot) string {
-	if account.SessionState == gateway.StateActive {
-		return "healthy"
-	}
-	if account.SessionState == gateway.StateDegraded {
-		return "stale"
-	}
-	return "unknown"
 }

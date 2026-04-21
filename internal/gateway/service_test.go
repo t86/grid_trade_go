@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -45,6 +46,32 @@ func TestGatewaySnapshotIncludesAccountMarketState(t *testing.T) {
 	require.Equal(t, domain.MarketSpot, snapshot.Accounts[0].Market)
 	require.Equal(t, StateActive, snapshot.Accounts[0].SessionState)
 	require.False(t, snapshot.Accounts[0].ReduceOnly)
+	require.Equal(t, "connected", snapshot.Accounts[0].UserStreamState)
+	require.Equal(t, "healthy", snapshot.Accounts[0].ListenKeyState)
+	require.NotNil(t, snapshot.Accounts[0].LastReconnectAt)
+	require.Len(t, snapshot.Events, 1)
+}
+
+func TestGatewayRuntimeSignalsAppearInSnapshot(t *testing.T) {
+	gw := NewService(fakeListenKeyProvider{}, fakeConnector{})
+	err := gw.BootstrapAccount(context.Background(), "primary", []domain.MarketType{domain.MarketFuturesUM})
+	require.NoError(t, err)
+
+	heartbeatAt := time.Now().Add(-3 * time.Second)
+	expiresAt := time.Now().Add(25 * time.Minute)
+
+	gw.RecordHeartbeat("primary", domain.MarketFuturesUM, heartbeatAt)
+	gw.MarkListenKeyState("primary", domain.MarketFuturesUM, "expiring", &expiresAt, "refresh delayed")
+	gw.MarkBackoff("primary", domain.MarketFuturesUM, true, "rate limited")
+
+	snapshot := gw.Snapshot()
+
+	require.Len(t, snapshot.Accounts, 1)
+	require.Equal(t, int64(3000), snapshot.Accounts[0].HeartbeatLagMs)
+	require.Equal(t, "expiring", snapshot.Accounts[0].ListenKeyState)
+	require.Equal(t, "rate limited", snapshot.Accounts[0].LastError)
+	require.True(t, snapshot.Accounts[0].ActiveBackoff)
+	require.GreaterOrEqual(t, len(snapshot.Events), 3)
 }
 
 type fakeListenKeyProvider struct{}

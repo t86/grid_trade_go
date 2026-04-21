@@ -37,6 +37,19 @@ func TestAccountsEndpointRequiresMarket(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
+func TestEventsEndpointReturnsJSON(t *testing.T) {
+	handler := NewHandler(fakeView{
+		events: []debugview.Event{{Message: "heartbeat timeout"}},
+	})
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/debug/events?market=futures_um&account=primary", nil)
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Contains(t, rr.Body.String(), "heartbeat timeout")
+}
+
 type fakeView struct {
 	dashboard debugview.Dashboard
 	accounts  []debugview.AccountConnectionRow
