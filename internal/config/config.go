@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"os"
 
 	"gopkg.in/yaml.v3"
 )
@@ -40,6 +41,14 @@ func LoadBytes(raw []byte) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func LoadFile(path string) (Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	return LoadBytes(raw)
 }
 
 func (c Config) Validate() error {

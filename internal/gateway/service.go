@@ -112,6 +112,10 @@ func (s *Service) MarkUserStreamDown(account string) {
 }
 
 func (s *Service) BootstrapAccount(ctx context.Context, account string, markets []domain.MarketType) error {
+	return s.BootstrapAccountWith(ctx, account, markets, s.listenKeys, s.connector)
+}
+
+func (s *Service) BootstrapAccountWith(ctx context.Context, account string, markets []domain.MarketType, listenKeys ListenKeyProvider, connector UserStreamConnector) error {
 	s.mu.Lock()
 	s.sessions[account] = StateConnecting
 	for _, market := range markets {
@@ -124,7 +128,7 @@ func (s *Service) BootstrapAccount(ctx context.Context, account string, markets 
 
 	var closers []io.Closer
 	for _, market := range markets {
-		listenKey, err := s.listenKeys.CreateListenKey(ctx, market)
+		listenKey, err := listenKeys.CreateListenKey(ctx, market)
 		if err != nil {
 			s.markMarketDegraded(account, market, err.Error())
 			s.MarkUserStreamDown(account)
@@ -132,7 +136,7 @@ func (s *Service) BootstrapAccount(ctx context.Context, account string, markets 
 			return err
 		}
 
-		conn, err := s.connector.Connect(ctx, market, listenKey)
+		conn, err := connector.Connect(ctx, market, listenKey)
 		if err != nil {
 			s.markMarketDegraded(account, market, err.Error())
 			s.MarkUserStreamDown(account)
@@ -158,6 +162,11 @@ func (s *Service) BootstrapAccount(ctx context.Context, account string, markets 
 	s.reduceOnly = false
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *Service) MarkMarketDegraded(account string, market domain.MarketType, lastError string) {
+	s.markMarketDegraded(account, market, lastError)
+	s.MarkUserStreamDown(account)
 }
 
 func (s *Service) Snapshot() Snapshot {

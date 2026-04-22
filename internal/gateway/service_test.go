@@ -74,6 +74,20 @@ func TestGatewayRuntimeSignalsAppearInSnapshot(t *testing.T) {
 	require.GreaterOrEqual(t, len(snapshot.Events), 3)
 }
 
+func TestGatewayCanRegisterDegradedConfiguredMarket(t *testing.T) {
+	gw := NewService(nil, nil)
+
+	gw.MarkMarketDegraded("primary", domain.MarketSpot, "missing BINANCE_API_KEY")
+
+	snapshot := gw.Snapshot()
+
+	require.Len(t, snapshot.Accounts, 1)
+	require.Equal(t, "primary", snapshot.Accounts[0].Account)
+	require.Equal(t, domain.MarketSpot, snapshot.Accounts[0].Market)
+	require.Equal(t, StateDegraded, snapshot.Accounts[0].SessionState)
+	require.Equal(t, "missing BINANCE_API_KEY", snapshot.Accounts[0].LastError)
+}
+
 type fakeListenKeyProvider struct{}
 
 func (fakeListenKeyProvider) CreateListenKey(context.Context, domain.MarketType) (string, error) {
