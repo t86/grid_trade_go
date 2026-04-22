@@ -1,0 +1,22 @@
+[Unit]
+Description=Grid Trade Binance Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gridtrade
+Group=gridtrade
+WorkingDirectory=/opt/grid-trade
+EnvironmentFile=/etc/grid-trade/grid-trade.env
+ExecStart=/opt/grid-trade/trader
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/grid-trade
+
+[Install]
+WantedBy=multi-user.target
