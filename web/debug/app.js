@@ -41,7 +41,7 @@ async function loadEvents(market, account) {
 function renderAlerts(alerts) {
   const root = document.getElementById("alerts");
   if (!alerts || alerts.length === 0) {
-    root.innerHTML = '<div class="empty">No active alerts</div>';
+    root.innerHTML = '<div class="empty">暂无活跃告警</div>';
     return;
   }
 
@@ -63,22 +63,22 @@ function renderMarkets(markets) {
       <div class="market-head">
         <div>
           <p class="eyebrow">${escapeHTML(market.market)}</p>
-          <h2>${market.market === "spot" ? "Spot" : "Futures"}</h2>
+          <h2>${market.market === "spot" ? "现货" : "合约"}</h2>
         </div>
-        <span class="badge ${escapeHTML(market.health)}">${escapeHTML(market.health)}</span>
+        <span class="badge ${escapeHTML(market.health)}">${escapeHTML(labelHealth(market.health))}</span>
       </div>
       <div class="metrics">
-        <div class="metric"><div class="metric-label">online accounts</div><div class="metric-value">${market.onlineAccounts ?? 0}</div></div>
-        <div class="metric"><div class="metric-label">degraded accounts</div><div class="metric-value">${market.degradedAccounts ?? 0}</div></div>
-        <div class="metric"><div class="metric-label">heartbeat lag</div><div class="metric-value">${market.avgHeartbeatLagMs ?? 0}ms</div></div>
-        <div class="metric"><div class="metric-label">listen key healthy</div><div class="metric-value">${market.listenKeyHealthyAccounts ?? 0}</div></div>
-        <div class="metric"><div class="metric-label">reduce-only accounts</div><div class="metric-value">${market.reduceOnlyAccounts ?? 0}</div></div>
-        <div class="metric"><div class="metric-label">last reconnect</div><div class="metric-value">${escapeHTML(formatDate(market.lastReconnectAt))}</div></div>
+        <div class="metric"><div class="metric-label">在线账户</div><div class="metric-value">${market.onlineAccounts ?? 0}</div></div>
+        <div class="metric"><div class="metric-label">降级账户</div><div class="metric-value">${market.degradedAccounts ?? 0}</div></div>
+        <div class="metric"><div class="metric-label">心跳延迟</div><div class="metric-value">${market.avgHeartbeatLagMs ?? 0}ms</div></div>
+        <div class="metric"><div class="metric-label">Listen Key 正常</div><div class="metric-value">${market.listenKeyHealthyAccounts ?? 0}</div></div>
+        <div class="metric"><div class="metric-label">只减仓账户</div><div class="metric-value">${market.reduceOnlyAccounts ?? 0}</div></div>
+        <div class="metric"><div class="metric-label">最近重连</div><div class="metric-value">${escapeHTML(formatDate(market.lastReconnectAt))}</div></div>
       </div>
       <div class="accounts">
         <details>
-          <summary>View Accounts</summary>
-          <div class="account-list empty">Loading...</div>
+          <summary>查看账户明细</summary>
+          <div class="account-list empty">加载中...</div>
         </details>
       </div>
     </section>
@@ -104,20 +104,20 @@ function renderMarkets(markets) {
 
 function renderAccountRows(accounts) {
   if (!accounts || accounts.length === 0) {
-    return '<div class="empty">No accounts</div>';
+    return '<div class="empty">暂无账户</div>';
   }
   return accounts.map((account) => `
     <article class="account-row">
       <div>
         <strong>${escapeHTML(account.account)}</strong>
-        <div class="account-meta">${escapeHTML(account.sessionState)} / listen key ${escapeHTML(account.listenKeyState)}</div>
-        <div class="account-meta">heartbeat: ${escapeHTML(formatDate(account.lastHeartbeatAt))}</div>
-        <div class="account-meta">reconnect: ${escapeHTML(formatDate(account.lastReconnectAt))}</div>
-        <div class="account-meta">listen key expires: ${escapeHTML(formatDate(account.listenKeyExpiresAt))}</div>
-        <div class="account-meta">${escapeHTML(account.lastError || "no recent error")}</div>
+        <div class="account-meta">会话状态：${escapeHTML(account.sessionState)} / Listen Key：${escapeHTML(account.listenKeyState)}</div>
+        <div class="account-meta">最近心跳：${escapeHTML(formatDate(account.lastHeartbeatAt))}</div>
+        <div class="account-meta">最近重连：${escapeHTML(formatDate(account.lastReconnectAt))}</div>
+        <div class="account-meta">Listen Key 到期：${escapeHTML(formatDate(account.listenKeyExpiresAt))}</div>
+        <div class="account-meta">${escapeHTML(account.lastError || "暂无最近错误")}</div>
       </div>
-      <div class="account-meta">reduce-only: ${account.reduceOnly ? "yes" : "no"}</div>
-      <div class="account-meta">backoff: ${account.activeBackoff ? "on" : "off"}</div>
+      <div class="account-meta">只减仓：${account.reduceOnly ? "是" : "否"}</div>
+      <div class="account-meta">退避：${account.activeBackoff ? "开启" : "关闭"}</div>
     </article>
   `).join("");
 }
@@ -125,7 +125,7 @@ function renderAccountRows(accounts) {
 function renderEvents(events) {
   const root = document.getElementById("events");
   if (!events || events.length === 0) {
-    root.innerHTML = '<div class="empty">No recent events</div>';
+    root.innerHTML = '<div class="empty">暂无最近事件</div>';
     return;
   }
   root.innerHTML = events.map((event) => `
@@ -133,6 +133,13 @@ function renderEvents(events) {
       <strong>${escapeHTML(event.message)}</strong>
     </article>
   `).join("");
+}
+
+function labelHealth(value) {
+  if (value === "healthy") return "正常";
+  if (value === "warning") return "警告";
+  if (value === "degraded") return "降级";
+  return value || "-";
 }
 
 async function refresh() {
