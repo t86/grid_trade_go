@@ -88,6 +88,19 @@ func TestGatewayCanRegisterDegradedConfiguredMarket(t *testing.T) {
 	require.Equal(t, "missing BINANCE_API_KEY", snapshot.Accounts[0].LastError)
 }
 
+func TestGatewaySnapshotIncludesSecretState(t *testing.T) {
+	gw := NewService(nil, nil)
+
+	gw.MarkSecretState("primary", domain.MarketFuturesUM, "primary", "load_failed", "secret file missing")
+
+	snapshot := gw.Snapshot()
+
+	require.Len(t, snapshot.Accounts, 1)
+	require.Equal(t, "primary", snapshot.Accounts[0].SecretRef)
+	require.Equal(t, "load_failed", snapshot.Accounts[0].SecretStatus)
+	require.Equal(t, "secret file missing", snapshot.Accounts[0].LastError)
+}
+
 type fakeListenKeyProvider struct{}
 
 func (fakeListenKeyProvider) CreateListenKey(context.Context, domain.MarketType) (string, error) {

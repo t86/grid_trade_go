@@ -61,6 +61,8 @@ type MarketHealthCard struct {
 type AccountConnectionRow struct {
 	Account            string               `json:"account"`
 	SessionState       gateway.SessionState `json:"sessionState"`
+	SecretRef          string               `json:"secretRef"`
+	SecretStatus       string               `json:"secretStatus"`
 	UserStreamState    string               `json:"userStreamState"`
 	ListenKeyState     string               `json:"listenKeyState"`
 	ListenKeyExpiresAt *time.Time           `json:"listenKeyExpiresAt,omitempty"`

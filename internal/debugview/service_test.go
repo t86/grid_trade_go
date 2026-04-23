@@ -16,29 +16,38 @@ func TestServiceBuildsDashboardFromGatewaySnapshot(t *testing.T) {
 		accounts: []gateway.AccountSnapshot{
 			{Account: "primary", Market: domain.MarketFuturesUM, SessionState: gateway.StateDegraded, ReduceOnly: true, LastError: "listen key stale", HeartbeatLagMs: 43000, ListenKeyState: "stale", LastReconnectAt: &reconnectAt},
 			{Account: "primary", Market: domain.MarketSpot, SessionState: gateway.StateActive, ListenKeyState: "healthy", HeartbeatLagMs: 1800},
+			{Account: "backup", Market: domain.MarketSpot, SessionState: gateway.StateDegraded, SecretRef: "backup", SecretStatus: "load_failed", LastError: "secret file missing"},
 		},
 	})
 
 	dashboard := svc.Dashboard()
 
-	require.Len(t, dashboard.Alerts, 2)
+	require.Len(t, dashboard.Alerts, 4)
 	require.Equal(t, domain.MarketSpot, dashboard.Markets[0].Market)
 	require.Equal(t, domain.MarketFuturesUM, dashboard.Markets[1].Market)
+	require.Equal(t, HealthDegraded, dashboard.Markets[0].Health)
 	require.Equal(t, HealthDegraded, dashboard.Markets[1].Health)
 	require.Equal(t, 1, dashboard.Markets[1].ReduceOnlyAccounts)
 	require.Equal(t, int64(43000), dashboard.Markets[1].AvgHeartbeatLagMs)
 	require.Equal(t, 1, dashboard.Markets[0].ListenKeyHealthyAccounts)
+	titles := make([]string, 0, len(dashboard.Alerts))
+	for _, alert := range dashboard.Alerts {
+		titles = append(titles, alert.Title)
+	}
+	require.Contains(t, titles, "密钥加载失败")
 }
 
 func TestAccountsSortsProblemRowsFirst(t *testing.T) {
 	svc := NewService(fakeGatewaySnapshot{accounts: []gateway.AccountSnapshot{
 		{Account: "ok", Market: domain.MarketSpot, SessionState: gateway.StateActive},
-		{Account: "bad", Market: domain.MarketSpot, SessionState: gateway.StateDegraded},
+		{Account: "bad", Market: domain.MarketSpot, SessionState: gateway.StateDegraded, SecretRef: "bad", SecretStatus: "load_failed"},
 	}})
 
 	rows := svc.Accounts(domain.MarketSpot)
 
 	require.Equal(t, "bad", rows[0].Account)
+	require.Equal(t, "bad", rows[0].SecretRef)
+	require.Equal(t, "load_failed", rows[0].SecretStatus)
 	require.Equal(t, "ok", rows[1].Account)
 }
 

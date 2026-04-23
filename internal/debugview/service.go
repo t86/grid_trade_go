@@ -43,6 +43,8 @@ func (s Service) Accounts(market domain.MarketType) []AccountConnectionRow {
 		rows = append(rows, AccountConnectionRow{
 			Account:            account.Account,
 			SessionState:       account.SessionState,
+			SecretRef:          account.SecretRef,
+			SecretStatus:       account.SecretStatus,
 			UserStreamState:    account.UserStreamState,
 			ListenKeyState:     account.ListenKeyState,
 			ListenKeyExpiresAt: account.ListenKeyExpiresAt,
@@ -88,6 +90,19 @@ func buildAlerts(accounts []gateway.AccountSnapshot, now time.Time) []AlertSumma
 				Market:   account.Market,
 				Account:  account.Account,
 				Title:    "用户流降级",
+				Detail:   account.LastError,
+				Since:    now,
+				Status:   AlertActive,
+			})
+		}
+		if account.SecretStatus == "load_failed" {
+			alerts = append(alerts, AlertSummary{
+				ID:       fmt.Sprintf("%s:%s:secret", account.Account, account.Market),
+				Severity: SeverityCritical,
+				Category: CategoryConnection,
+				Market:   account.Market,
+				Account:  account.Account,
+				Title:    "密钥加载失败",
 				Detail:   account.LastError,
 				Since:    now,
 				Status:   AlertActive,

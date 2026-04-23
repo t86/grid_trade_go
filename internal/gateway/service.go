@@ -35,6 +35,8 @@ type AccountSnapshot struct {
 	Account            string
 	Market             domain.MarketType
 	SessionState       SessionState
+	SecretRef          string
+	SecretStatus       string
 	UserStreamState    string
 	ListenKeyState     string
 	ListenKeyExpiresAt *time.Time
@@ -58,6 +60,8 @@ type Service struct {
 	mu              sync.RWMutex
 	sessions        map[string]SessionState
 	markets         map[accountMarketKey]SessionState
+	secretRefs      map[accountMarketKey]string
+	secretStates    map[accountMarketKey]string
 	userStreams     map[accountMarketKey]string
 	listenKeyStates map[accountMarketKey]string
 	listenKeyExpiry map[accountMarketKey]*time.Time
@@ -90,6 +94,8 @@ func NewService(listenKeys ListenKeyProvider, connector UserStreamConnector) *Se
 	return &Service{
 		sessions:        make(map[string]SessionState),
 		markets:         make(map[accountMarketKey]SessionState),
+		secretRefs:      make(map[accountMarketKey]string),
+		secretStates:    make(map[accountMarketKey]string),
 		userStreams:     make(map[accountMarketKey]string),
 		listenKeyStates: make(map[accountMarketKey]string),
 		listenKeyExpiry: make(map[accountMarketKey]*time.Time),
@@ -169,6 +175,31 @@ func (s *Service) MarkMarketDegraded(account string, market domain.MarketType, l
 	s.MarkUserStreamDown(account)
 }
 
+func (s *Service) MarkSecretState(account string, market domain.MarketType, ref string, state string, detail string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := accountMarketKey{account: account, market: market}
+	if s.markets[key] == "" {
+		s.markets[key] = StateConnecting
+	}
+	s.secretRefs[key] = ref
+	s.secretStates[key] = state
+	if detail != "" {
+		s.lastErrors[key] = detail
+	}
+	if state == "load_failed" {
+		s.markets[key] = StateDegraded
+		s.sessions[account] = StateDegraded
+		s.reduceOnly = true
+		s.userStreams[key] = "disconnected"
+		s.listenKeyStates[key] = "not_configured"
+		s.recordEventLocked(account, market, "connection", "secret load failed")
+		return
+	}
+	s.recordEventLocked(account, market, "connection", "secret "+state)
+}
+
 func (s *Service) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -183,6 +214,8 @@ func (s *Service) Snapshot() Snapshot {
 			Account:            key.account,
 			Market:             key.market,
 			SessionState:       state,
+			SecretRef:          s.secretRefs[key],
+			SecretStatus:       s.secretStates[key],
 			UserStreamState:    s.userStreams[key],
 			ListenKeyState:     s.listenKeyStates[key],
 			ListenKeyExpiresAt: s.listenKeyExpiry[key],
