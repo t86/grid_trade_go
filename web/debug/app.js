@@ -62,8 +62,8 @@ function renderMarkets(markets) {
     <section class="market" data-market="${escapeHTML(market.market)}">
       <div class="market-head">
         <div>
-          <p class="eyebrow">${escapeHTML(market.market)}</p>
-          <h2>${market.market === "spot" ? "现货" : "合约"}</h2>
+          <p class="eyebrow">${escapeHTML(labelMarketCode(market.market))}</p>
+          <h2>${escapeHTML(labelMarket(market.market))}</h2>
         </div>
         <span class="badge ${escapeHTML(market.health)}">${escapeHTML(labelHealth(market.health))}</span>
       </div>
@@ -110,7 +110,9 @@ function renderAccountRows(accounts) {
     <article class="account-row">
       <div>
         <strong>${escapeHTML(account.account)}</strong>
-        <div class="account-meta">会话状态：${escapeHTML(account.sessionState)} / Listen Key：${escapeHTML(account.listenKeyState)}</div>
+        <div class="account-meta">会话状态：${escapeHTML(labelSessionState(account.sessionState))} / Listen Key：${escapeHTML(labelListenKeyState(account.listenKeyState))}</div>
+        <div class="account-meta">密钥引用：${escapeHTML(account.secretRef || "-")}</div>
+        <div class="account-meta">密钥状态：${escapeHTML(labelSecretStatus(account.secretStatus))}</div>
         <div class="account-meta">最近心跳：${escapeHTML(formatDate(account.lastHeartbeatAt))}</div>
         <div class="account-meta">最近重连：${escapeHTML(formatDate(account.lastReconnectAt))}</div>
         <div class="account-meta">Listen Key 到期：${escapeHTML(formatDate(account.listenKeyExpiresAt))}</div>
@@ -139,6 +141,43 @@ function labelHealth(value) {
   if (value === "healthy") return "正常";
   if (value === "warning") return "警告";
   if (value === "degraded") return "降级";
+  return value || "-";
+}
+
+function labelMarket(value) {
+  if (value === "spot") return "现货";
+  if (value === "futures_um") return "合约";
+  return value || "-";
+}
+
+function labelMarketCode(value) {
+  if (value === "spot") return "SPOT";
+  if (value === "futures_um") return "FUTURES UM";
+  return value || "-";
+}
+
+function labelSessionState(value) {
+  if (value === "connecting") return "连接中";
+  if (value === "active") return "运行中";
+  if (value === "degraded") return "已降级";
+  if (value === "backing_off") return "退避中";
+  if (value === "banned_until") return "封禁中";
+  return value || "-";
+}
+
+function labelListenKeyState(value) {
+  if (value === "creating") return "创建中";
+  if (value === "healthy") return "正常";
+  if (value === "stale") return "已过期";
+  if (value === "expiring") return "即将过期";
+  if (value === "not_configured") return "未配置";
+  return value || "-";
+}
+
+function labelSecretStatus(value) {
+  if (value === "loaded") return "已加载";
+  if (value === "load_failed") return "加载失败";
+  if (value === "not_configured") return "未配置";
   return value || "-";
 }
 
