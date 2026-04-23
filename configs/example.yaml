@@ -1,12 +1,13 @@
 system:
   log_level: info
   http_addr: ":8080"
+  secret_dir: "/etc/grid-trade/accounts"
   reduce_only_on_degraded: true
 accounts:
   - name: primary
+    enabled: true
     market_types: ["spot", "futures_um"]
-    api_key_env: BINANCE_API_KEY
-    secret_key_env: BINANCE_SECRET_KEY
+    secret_ref: primary
 strategies:
   - id: grid-btc
     type: grid

@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -14,15 +15,16 @@ type Config struct {
 }
 
 type SystemConfig struct {
-	LogLevel string `yaml:"log_level"`
-	HTTPAddr string `yaml:"http_addr"`
+	LogLevel  string `yaml:"log_level"`
+	HTTPAddr  string `yaml:"http_addr"`
+	SecretDir string `yaml:"secret_dir"`
 }
 
 type AccountConfig struct {
-	Name         string   `yaml:"name"`
-	MarketTypes  []string `yaml:"market_types"`
-	APIKeyEnv    string   `yaml:"api_key_env"`
-	SecretKeyEnv string   `yaml:"secret_key_env"`
+	Name        string   `yaml:"name"`
+	Enabled     bool     `yaml:"enabled"`
+	MarketTypes []string `yaml:"market_types"`
+	SecretRef   string   `yaml:"secret_ref"`
 }
 
 type StrategyConfig struct {
@@ -55,12 +57,23 @@ func (c Config) Validate() error {
 	if len(c.Accounts) == 0 {
 		return errors.New("at least one account is required")
 	}
+	names := map[string]struct{}{}
 	for _, account := range c.Accounts {
-		if account.APIKeyEnv == "" {
-			return errors.New("api_key_env is required")
+		if account.Name == "" {
+			return errors.New("account name is required")
 		}
-		if account.SecretKeyEnv == "" {
-			return errors.New("secret_key_env is required")
+		if _, exists := names[account.Name]; exists {
+			return fmt.Errorf("duplicate account name %q", account.Name)
+		}
+		names[account.Name] = struct{}{}
+		if !account.Enabled {
+			continue
+		}
+		if account.SecretRef == "" {
+			return errors.New("secret_ref is required")
+		}
+		if len(account.MarketTypes) == 0 {
+			return errors.New("market_types is required")
 		}
 	}
 	return nil
