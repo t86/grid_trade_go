@@ -17,6 +17,7 @@ import (
 	"grid_trade/internal/domain"
 	binance "grid_trade/internal/exchange/binance/common"
 	"grid_trade/internal/gateway"
+	"grid_trade/internal/secrets"
 	runtimepkg "grid_trade/internal/strategy/runtime"
 )
 
@@ -104,19 +105,30 @@ func main() {
 }
 
 func startConfiguredAccounts(gw *gateway.Service, cfg config.Config) {
+	startConfiguredAccountsWithProvider(gw, cfg, secrets.NewFileProvider(cfg.System.SecretDir))
+}
+
+func startConfiguredAccountsWithProvider(gw *gateway.Service, cfg config.Config, provider secrets.Provider) {
 	for _, account := range cfg.Accounts {
+		if !account.Enabled {
+			continue
+		}
 		markets := parseMarkets(account.MarketTypes)
-		apiKey := os.Getenv(account.APIKeyEnv)
-		secretKey := os.Getenv(account.SecretKeyEnv)
-		if apiKey == "" || secretKey == "" {
-			missing := missingCredentialMessage(account)
+		if len(markets) == 0 {
+			continue
+		}
+		secret, err := provider.Load(context.Background(), account.SecretRef)
+		if err != nil {
 			for _, market := range markets {
-				gw.MarkMarketDegraded(account.Name, market, missing)
+				gw.MarkSecretState(account.Name, market, account.SecretRef, "load_failed", err.Error())
 			}
 			continue
 		}
+		for _, market := range markets {
+			gw.MarkSecretState(account.Name, market, account.SecretRef, "loaded", "")
+		}
 
-		restClient := binance.NewRESTClient(apiKey, nil, binance.DefaultEndpoints())
+		restClient := binance.NewRESTClient(secret.APIKey, nil, binance.DefaultEndpoints())
 		connector := binance.NewUserStreamConnector(binance.DefaultEndpoints(), nil)
 		go func(accountName string, markets []domain.MarketType) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -140,15 +152,4 @@ func parseMarkets(values []string) []domain.MarketType {
 		}
 	}
 	return markets
-}
-
-func missingCredentialMessage(account config.AccountConfig) string {
-	missing := make([]string, 0, 2)
-	if os.Getenv(account.APIKeyEnv) == "" {
-		missing = append(missing, account.APIKeyEnv)
-	}
-	if os.Getenv(account.SecretKeyEnv) == "" {
-		missing = append(missing, account.SecretKeyEnv)
-	}
-	return "missing credential env: " + strings.Join(missing, ", ")
 }

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -37,17 +40,15 @@ func TestBuildAppMountsDebugDashboard(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 }
 
-func TestBuildAppShowsConfiguredMarketsAsDegradedWhenCredentialsMissing(t *testing.T) {
-	t.Setenv("MISSING_BINANCE_API_KEY", "")
-	t.Setenv("MISSING_BINANCE_SECRET_KEY", "")
-
+func TestBuildAppMarksAccountDegradedWhenSecretFileMissing(t *testing.T) {
 	app, err := BuildApp(config.Config{
+		System: config.SystemConfig{SecretDir: t.TempDir()},
 		Accounts: []config.AccountConfig{
 			{
-				Name:         "primary",
-				MarketTypes:  []string{"spot", "futures_um"},
-				APIKeyEnv:    "MISSING_BINANCE_API_KEY",
-				SecretKeyEnv: "MISSING_BINANCE_SECRET_KEY",
+				Name:       "primary",
+				Enabled:    true,
+				MarketTypes: []string{"spot", "futures_um"},
+				SecretRef:  "primary",
 			},
 		},
 	})
@@ -57,5 +58,31 @@ func TestBuildAppShowsConfiguredMarketsAsDegradedWhenCredentialsMissing(t *testi
 
 	require.Len(t, snapshot.Accounts, 2)
 	require.Equal(t, gateway.StateDegraded, snapshot.Accounts[0].SessionState)
-	require.Contains(t, snapshot.Accounts[0].LastError, "missing")
+	require.Equal(t, "load_failed", snapshot.Accounts[0].SecretStatus)
+	require.Contains(t, snapshot.Accounts[0].LastError, "secret load failed")
+}
+
+func TestBuildAppSkipsDisabledAccounts(t *testing.T) {
+	secretDir := t.TempDir()
+	payload, err := json.Marshal(map[string]string{
+		"api_key":    "api",
+		"secret_key": "secret",
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(secretDir, "disabled.json"), payload, 0o600))
+
+	app, err := BuildApp(config.Config{
+		System: config.SystemConfig{SecretDir: secretDir},
+		Accounts: []config.AccountConfig{
+			{
+				Name:        "disabled",
+				Enabled:     false,
+				MarketTypes: []string{"spot"},
+				SecretRef:   "disabled",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	require.Empty(t, app.gateway.Snapshot().Accounts)
 }
