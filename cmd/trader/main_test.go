@@ -45,10 +45,10 @@ func TestBuildAppMarksAccountDegradedWhenSecretFileMissing(t *testing.T) {
 		System: config.SystemConfig{SecretDir: t.TempDir()},
 		Accounts: []config.AccountConfig{
 			{
-				Name:       "primary",
-				Enabled:    true,
+				Name:        "primary",
+				Enabled:     true,
 				MarketTypes: []string{"spot", "futures_um"},
-				SecretRef:  "primary",
+				SecretRef:   "primary",
 			},
 		},
 	})
